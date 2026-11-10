@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["crates/ditto-core", "crates/ditto-cli"]
+members = ["crates/ditto-core", "crates/ditto-vision", "crates/ditto-cli"]
 
 [workspace.package]
 version = "0.1.0"
@@ -11,7 +11,9 @@ repository = "https://github.com/olapwriter-prog/ditto_video_engine"
 
 [workspace.dependencies]
 ditto-core = { path = "crates/ditto-core" }
+ditto-vision = { path = "crates/ditto-vision" }
 # The engine Ditto is built from. Pinned; changes go upstream, nothing is copied.
+rie-server = { git = "https://github.com/olapwriter-prog/Rust_Interference_engine", rev = "f3be365b41f929cc81ee08afaa994d02bbeee2f5" }
 rie-core = { git = "https://github.com/olapwriter-prog/Rust_Interference_engine", rev = "f3be365b41f929cc81ee08afaa994d02bbeee2f5" }
 
 [profile.release]

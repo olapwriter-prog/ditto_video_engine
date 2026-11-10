@@ -18,7 +18,7 @@ the work divides; it does not say how fast a phone is.
 - The feed-forward block split into experts. Test: with every expert on, the result equals
   the dense block.
 - Tests pass (`cargo test --workspace`), no downloads.
-- `scripts/build-phone.sh` builds a static ARM64 binary (750 KB) with Rust's own linker.
+- `scripts/build-phone.sh` builds a static ARM64 binary (2.1 MB) with Rust's own linker.
   **Built, not run:** there is no ARM machine or emulator here, so the ARM path is
   untested. `scripts/phone-bench.sh` runs the measurements on the phone; it was dry-run
   here with the x86 binary.
@@ -54,7 +54,7 @@ Ranges are two runs. Denoising only: text encoding, decoding and export are not 
 ### Convolutions (added for the image decoder and the driver warning proposal)
 
 - `ditto-core::conv`: 2-D convolution as a quantized matrix product, tested against the
-  definition (strides, odd sizes, 1×1 to 5×5, more positions than one chunk). 19 tests pass.
+  definition (strides, odd sizes, 1×1 to 5×5, more positions than one chunk).
 - `ditto bench-conv`, same VM, 4 threads, Q4_0, a stack the size of a small detector's
   backbone with random weights (cost only):
 
@@ -68,6 +68,23 @@ Ranges are two runs. Denoising only: text encoding, decoding and export are not 
 - Throughput 36 to 38 G multiply-adds per second at full width, against 57 G/s for plain
   matrix products; four threads give only 2.4× over one. Laying out patches and quantizing
   them is the cost to remove (direct 3×3 kernels, or patches built in int8).
+
+### Pictures the user took, screenshots as SVG, and the hand-over to the inference engine
+
+Details and limits in [USE_CASES.md](USE_CASES.md).
+
+- `ditto look`: time, place, camera, size, colours, sharpness, QR codes, duplicate
+  fingerprint, photo or screenshot. No model; it reads no text and names no objects.
+- `ditto trace`: flat pictures as SVG, exact to the pixel.
+- `integrations/rie/ditto-tools.json`, `--rie URL`, `--memory DIR`: results reach the
+  inference engine as tool output and as memory.
+- Tests: 46 pass in the workspace (19 kernels, 23 pictures, 4 end to end). The end-to-end
+  tests load the shipped manifest with `rie-server`'s loader, run the tools with its runner,
+  and read the memory back with `rie-core`'s store.
+- Browser check (Chromium, x86-64 VM): a 420×300 page capture traced and rendered again
+  gives a byte-identical SVG at 8, 16 and 256 colours. SVG size 29.6 / 45.5 / 67.5 KB
+  against a 13.5 KB PNG: anti-aliased text is expensive as outlines.
+- Not tested: a live `rie-server` with a model calling these tools; any ARM device.
 
 ### Next
 

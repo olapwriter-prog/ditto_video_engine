@@ -1,0 +1,16 @@
+[package]
+name = "ditto-vision"
+description = "Ditto: what a picture contains, without a model, and screenshots as SVG"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+image = { version = "0.25", default-features = false, features = ["png", "jpeg", "webp", "gif", "bmp"] }
+kamadak-exif = "0.6"
+rqrr = { version = "0.11", default-features = false }
+serde_json = { version = "1", features = ["preserve_order"] }
+
+[dev-dependencies]
+qrcode = { version = "0.14", default-features = false }

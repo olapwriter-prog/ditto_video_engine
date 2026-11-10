@@ -1,11 +1,18 @@
 //! `ditto`: for now, the Phase 0 measurements of `docs/PLAN.md`.
 
+mod pictures;
+
 use ditto_core::bench::{self, BenchConfig, BenchResult};
 use ditto_core::shapes::{self, DitShape};
 use rie_core::quant::GgmlType;
 use std::process::ExitCode;
 
 const USAGE: &str = "\
+ditto look PICTURE... [--json] [--rie http://127.0.0.1:8080] [--memory DIR]
+                           what a picture contains, read and measured without a model; optionally
+                           filed in the inference engine's memory (running server, or its directory)
+ditto trace PICTURE [-o OUT.svg] [--colours 16] [--json] [--force]
+                           a screenshot, diagram or logo as SVG, exact to the pixel
 ditto bench    [options]   time one denoiser block with random weights, scale to a clip
 ditto estimate [options]   the same table from a throughput figure, without running anything
 ditto bench-conv [--size 416] [--mult 1.0] [--wtype T] [--threads N] [--reps N]
@@ -349,6 +356,8 @@ fn main() -> ExitCode {
     let res = match argv.first().map(String::as_str) {
         Some("bench") => run(cmd_bench),
         Some("estimate") => run(cmd_estimate),
+        Some("look") => pictures::cmd_look(&argv[1..]),
+        Some("trace") => pictures::cmd_trace(&argv[1..]),
         Some("bench-conv") => cmd_bench_conv(&argv[1..]),
         Some("help" | "--help" | "-h") | None => {
             print!("{USAGE}");
