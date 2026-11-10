@@ -1,0 +1,15 @@
+[package]
+name = "ditto-cli"
+description = "The `ditto` command"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[[bin]]
+name = "ditto"
+path = "src/main.rs"
+
+[dependencies]
+ditto-core = { workspace = true }
+rie-core = { workspace = true }

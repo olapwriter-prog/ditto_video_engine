@@ -1,6 +1,6 @@
 # Ditto: plan for a night-time image and video generation engine for agenticOS phones
 
-Status: **plan only, no code yet.** Written 2026-11-10.
+Status: written 2026-11-10. Phase 0 has started; see [PROGRESS.md](PROGRESS.md) for what is measured.
 
 Sources read for this plan:
 

@@ -1,0 +1,25 @@
+[workspace]
+resolver = "2"
+members = ["crates/ditto-core", "crates/ditto-cli"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "MIT OR Apache-2.0"
+rust-version = "1.82"
+repository = "https://github.com/olapwriter-prog/ditto_video_engine"
+
+[workspace.dependencies]
+ditto-core = { path = "crates/ditto-core" }
+# The engine Ditto is built from. Pinned; changes go upstream, nothing is copied.
+rie-core = { git = "https://github.com/olapwriter-prog/Rust_Interference_engine", rev = "f3be365b41f929cc81ee08afaa994d02bbeee2f5" }
+
+[profile.release]
+opt-level = 3
+lto = "fat"
+codegen-units = 1
+panic = "abort"
+
+# Numeric kernels are too slow to test unoptimised.
+[profile.test]
+opt-level = 2
