@@ -276,3 +276,52 @@ pub fn cmd_trace(argv: &[String]) -> Result<(), String> {
     }
     Ok(())
 }
+
+/// `ditto scripts TEXT...`: the scripts in a piece of text, as a sign or a receipt mixes them.
+pub fn cmd_scripts(argv: &[String]) -> Result<(), String> {
+    use ditto_vision::scripts::{ascii_digits, runs};
+    let json_out = argv.first().is_some_and(|a| a == "--json");
+    let text = argv[json_out as usize..].join(" ");
+    if text.trim().is_empty() {
+        return Err("no text given".into());
+    }
+    let found = runs(&text);
+    if json_out {
+        let rows: Vec<_> = found
+            .iter()
+            .map(|r| {
+                json!({
+                    "script": r.script.name(), "text": r.text, "digits_as_ascii": ascii_digits(&r.text),
+                    "languages": r.languages().iter().map(|l| l.name).collect::<Vec<_>>().join(", "),
+                })
+            })
+            .collect();
+        println!("{}", json!(rows));
+        return Ok(());
+    }
+    if found.is_empty() {
+        println!(
+            "no letters of a covered script (numbers only: {})",
+            ascii_digits(text.trim())
+        );
+    }
+    for r in &found {
+        let langs = r
+            .languages()
+            .iter()
+            .map(|l| l.name)
+            .collect::<Vec<_>>()
+            .join(", ");
+        println!("{:<17} {}", r.script.name(), ascii_digits(&r.text));
+        println!(
+            "{:<17} could be: {}",
+            "",
+            if langs.is_empty() {
+                "a language outside India's scheduled ones"
+            } else {
+                &langs
+            }
+        );
+    }
+    Ok(())
+}

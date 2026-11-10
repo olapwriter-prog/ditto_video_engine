@@ -4,7 +4,7 @@ Measured numbers only, with the machine named. Estimates live in [PLAN.md](PLAN.
 
 ## Phase 0: measure and decide (started 2026-11-10)
 
-**No phone has been measured yet.** Everything below is from the development machine, an
+**No real phone has been measured yet.** Speeds below are from the development machine, an
 x86-64 cloud VM (Intel Xeon 2.1 GHz, 4 cores, AVX2, 16 GB). It says the tool works and how
 the work divides; it does not say how fast a phone is.
 
@@ -85,6 +85,42 @@ Details and limits in [USE_CASES.md](USE_CASES.md).
   gives a byte-identical SVG at 8, 16 and 256 colours. SVG size 29.6 / 45.5 / 67.5 KB
   against a 13.5 KB PNG: anti-aliased text is expensive as outlines.
 - Not tested: a live `rie-server` with a model calling these tools; any ARM device.
+
+### Scripts of all Indian languages
+
+- `ditto-vision::scripts` and `ditto scripts TEXT`: splits mixed text (a sign in Telugu,
+  Hindi and English) into runs of one script, lists the languages each run could be, and
+  writes every script's digits as 0-9. Covers the scripts of India's 22 scheduled languages
+  and English, plus Greek and Cyrillic for Europe.
+- The script is detected exactly. The **language is not**: eleven scheduled languages can
+  be written in Devanagari, so a run lists candidates. Only Assamese is told from Bengali,
+  by its own letters.
+- This is the routing step for text reading and spoken warnings. It reads no text from a
+  picture: there is still no text-reading model. Warning phrases in the 22 languages are
+  **not written**; they need speakers to write and check them.
+
+### Emulated phone processors (`scripts/sim-phones.sh`)
+
+Run on the x86-64 VM with QEMU 8.2 user-mode emulation: 41 checks, 0 failed.
+
+| Emulated processor | Stands for | Tests | Kernel chosen at run time |
+|---|---|---|---|
+| Cortex-A53, 64-bit | 2015-2019 and entry-level phones, PinePhone | 52 pass | `neon` |
+| Cortex-A76, 64-bit | 2018-2021 phones (Snapdragon 845-888 class) | 52 pass | `neon-dotprod` |
+| Cortex-A710, 64-bit | 2022 and later | 52 pass | `neon-i8mm` |
+| "max", 64-bit | Every instruction the emulator knows | 52 pass | `neon-i8mm` |
+| Cortex-A7, 32-bit | 32-bit phones before about 2016 | 52 pass | `scalar` |
+| "max", 32-bit | 32-bit system on a newer processor | 52 pass | `scalar` |
+
+- On every profile the SVG of the browser capture, the picture facts and the script
+  split are byte-identical to the x86 results.
+- Compile only (cannot be run here): Android on arm64, 32-bit ARM and x86-64; iPhone and
+  the iPhone simulator target. All compile.
+- **What this is not.** It is not the Android emulator or Apple's iPhone simulator: no
+  Android or iOS system ran, and no app exists to run in them. No camera, GPU, heat or
+  speed was simulated; emulated time says nothing about a phone. "All mobile phones" is
+  covered as processor classes, not as individual models. 32-bit phones have no fast
+  kernel (`scalar`) and would be far too slow for models.
 
 ### Next
 

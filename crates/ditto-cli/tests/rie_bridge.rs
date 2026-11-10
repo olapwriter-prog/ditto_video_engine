@@ -11,6 +11,26 @@ use std::process::Command;
 
 const DITTO: &str = env!("CARGO_BIN_EXE_ditto");
 
+/// How to start `ditto`: directly, or through an emulator when the tests are built for a
+/// phone's processor and run on another machine (`scripts/sim-phones.sh` sets
+/// `DITTO_TEST_RUNNER`, for example to `qemu-aarch64 -cpu cortex-a76`).
+fn argv0() -> Vec<String> {
+    let mut v: Vec<String> = std::env::var("DITTO_TEST_RUNNER")
+        .unwrap_or_default()
+        .split_whitespace()
+        .map(str::to_string)
+        .collect();
+    v.push(DITTO.to_string());
+    v
+}
+
+fn ditto() -> Command {
+    let v = argv0();
+    let mut c = Command::new(&v[0]);
+    c.args(&v[1..]);
+    c
+}
+
 fn dir(name: &str) -> PathBuf {
     let d = std::env::temp_dir().join(format!("ditto-bridge-{name}-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&d);
@@ -41,7 +61,8 @@ fn manifest(d: &Path) -> PathBuf {
     let mut m: Value = serde_json::from_str(&std::fs::read_to_string(shipped).unwrap()).unwrap();
     for t in m["tools"].as_array_mut().unwrap() {
         assert_eq!(t["command"][0], "ditto");
-        t["command"][0] = json!(DITTO);
+        let rest = t["command"].as_array().unwrap()[1..].to_vec();
+        t["command"] = argv0().into_iter().map(Value::from).chain(rest).collect();
     }
     let p = d.join("tools.json");
     std::fs::write(&p, m.to_string()).unwrap();
@@ -111,7 +132,7 @@ fn observations_land_in_the_inference_engines_memory_and_are_recalled() {
     screenshot(&pic);
     let mem = d.join("rie-memory");
     let run = || {
-        Command::new(DITTO)
+        ditto()
             .args([
                 "look",
                 "--memory",
@@ -194,7 +215,7 @@ fn observations_are_posted_to_a_running_server_and_only_a_local_one() {
         .unwrap();
         (head, String::from_utf8(body).unwrap())
     });
-    let out = Command::new(DITTO)
+    let out = ditto()
         .args([
             "look",
             "--rie",
@@ -228,14 +249,14 @@ fn observations_are_posted_to_a_running_server_and_only_a_local_one() {
         "https://127.0.0.1:8080",
         "http://10.0.0.5",
     ] {
-        let out = Command::new(DITTO)
+        let out = ditto()
             .args(["look", "--rie", url, pic.to_str().unwrap()])
             .output()
             .unwrap();
         assert!(!out.status.success(), "{url} should be refused");
     }
     // nothing listening: an error, not a hang
-    let out = Command::new(DITTO)
+    let out = ditto()
         .args(["look", "--rie", "http://127.0.0.1:9", pic.to_str().unwrap()])
         .output()
         .unwrap();
@@ -250,7 +271,7 @@ fn several_pictures_and_bad_ones() {
     screenshot(&a);
     screenshot(&b);
     std::fs::write(&bad, b"\x89PNG\r\n\x1a\nbroken").unwrap();
-    let out = Command::new(DITTO)
+    let out = ditto()
         .args(["look", "--json"])
         .args([&a, &b, &bad])
         .output()
@@ -261,13 +282,9 @@ fn several_pictures_and_bad_ones() {
     assert_eq!(rows.len(), 3);
     assert_eq!(rows[0]["fingerprint"], rows[1]["fingerprint"]); // identical pictures
     assert!(rows[2]["error"].as_str().unwrap().contains("damaged"));
-    let out = Command::new(DITTO)
-        .args(["look"])
-        .arg(&bad)
-        .output()
-        .unwrap();
+    let out = ditto().args(["look"]).arg(&bad).output().unwrap();
     assert_eq!(out.status.code(), Some(2));
-    let out = Command::new(DITTO)
+    let out = ditto()
         .args(["trace", "--colours", "1"])
         .arg(&a)
         .output()

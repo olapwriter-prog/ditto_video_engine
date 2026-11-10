@@ -13,6 +13,7 @@
 pub mod codes;
 pub mod load;
 pub mod observe;
+pub mod scripts;
 pub mod stats;
 pub mod trace;
 
