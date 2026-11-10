@@ -30,13 +30,17 @@ echo "hottest zone before: $(hottest)"
 
 run() {
     echo
-    echo "== ditto bench $*"
-    "$BIN" bench "$@"
+    echo "== ditto $*"
+    "$BIN" "$@"
     echo "hottest zone after: $(hottest)"
 }
 
-run --model pixart-0.6b --width 512 --height 512 --steps 4 --experts 8 --used 2
-run --width 320 --height 192 --frames 17 --experts 8 --used 2
-run --width 480 --height 272 --frames 33 --experts 8 --used 2
+run bench --model pixart-0.6b --width 512 --height 512 --steps 4 --experts 8 --used 2
+run bench --width 320 --height 192 --frames 17 --experts 8 --used 2
+run bench --width 480 --height 272 --frames 33 --experts 8 --used 2
 # the same clip on one thread: how well the cores scale
-run --width 320 --height 192 --frames 17 --threads 1 --reps 1
+run bench --width 320 --height 192 --frames 17 --threads 1 --reps 1
+# perception-sized convolutions (docs/DRIVER_ASSIST.md): frames per second
+run bench-conv --size 416
+run bench-conv --size 416 --mult 0.5
+run bench-conv --size 320 --mult 0.5 --threads 1

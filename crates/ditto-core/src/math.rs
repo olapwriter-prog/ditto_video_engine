@@ -87,6 +87,15 @@ multiversion! {
 }
 
 multiversion! {
+    /// SiLU (`x · sigmoid(x)`), in place.
+    pub fn silu(x: &mut [f32]) {
+        for v in x.iter_mut() {
+            *v /= 1.0 + exp1(-*v);
+        }
+    }
+}
+
+multiversion! {
     /// Layer norm without learned scale or shift, one row in place.
     pub fn layer_norm(x: &mut [f32]) {
         let n = x.len() as f32;
@@ -153,6 +162,19 @@ mod tests {
             })
             .collect();
         gelu_tanh(&mut x);
+        for (g, w) in x.iter().zip(&want) {
+            assert!((*g as f64 - w).abs() < 2e-6, "{g} vs {w}");
+        }
+    }
+
+    #[test]
+    fn silu_matches_reference() {
+        let mut x: Vec<f32> = (-800..800).map(|i| i as f32 * 0.01).collect();
+        let want: Vec<f64> = x
+            .iter()
+            .map(|&v| v as f64 / (1.0 + (-(v as f64)).exp()))
+            .collect();
+        silu(&mut x);
         for (g, w) in x.iter().zip(&want) {
             assert!((*g as f64 - w).abs() < 2e-6, "{g} vs {w}");
         }

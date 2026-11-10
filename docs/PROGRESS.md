@@ -17,7 +17,7 @@ the work divides; it does not say how fast a phone is.
   (blocked, keys and values transposed), and vectorised `exp`, softmax, GELU and layer norm.
 - The feed-forward block split into experts. Test: with every expert on, the result equals
   the dense block.
-- 15 tests pass (`cargo test --workspace`), no downloads.
+- Tests pass (`cargo test --workspace`), no downloads.
 - `scripts/build-phone.sh` builds a static ARM64 binary (750 KB) with Rust's own linker.
   **Built, not run:** there is no ARM machine or emulator here, so the ARM path is
   untested. `scripts/phone-bench.sh` runs the measurements on the phone; it was dry-run
@@ -50,6 +50,24 @@ Ranges are two runs. Denoising only: text encoding, decoding and export are not 
    chunk should recover most of the gap.
 3. The plan's 15 G multiply-adds per second for a phone is still an assumption. This VM
    does 44 G/s overall, so the assumption puts a Snapdragon 845 at a third of it.
+
+### Convolutions (added for the image decoder and the driver warning proposal)
+
+- `ditto-core::conv`: 2-D convolution as a quantized matrix product, tested against the
+  definition (strides, odd sizes, 1×1 to 5×5, more positions than one chunk). 19 tests pass.
+- `ditto bench-conv`, same VM, 4 threads, Q4_0, a stack the size of a small detector's
+  backbone with random weights (cost only):
+
+| Input | Work per frame | One frame | Frames per second |
+|---|---|---|---|
+| 416×416 | 3.23 G multiply-adds | 90 ms | 11.1 |
+| 416×416, half the channels | 0.88 G | 43 ms | 23.5 |
+| 640×640 | 7.64 G | 201 ms | 5.0 |
+| 416×416, one thread | 3.23 G | 215 ms | 4.6 |
+
+- Throughput 36 to 38 G multiply-adds per second at full width, against 57 G/s for plain
+  matrix products; four threads give only 2.4× over one. Laying out patches and quantizing
+  them is the cost to remove (direct 3×3 kernels, or patches built in int8).
 
 ### Next
 

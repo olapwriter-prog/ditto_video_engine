@@ -1,10 +1,19 @@
 # Driver assist from two or more phones: assessment and plan
 
-Status: **proposal only, nothing built.** Written 2026-11-10, in answer to the idea of
-reusing this engine's machine-learning parts for a driver-assist program that links several
-phones in one vehicle and tells the driver when to change lanes, slow down and so on.
+Status: **proposal.** Written 2026-11-10, in answer to the idea of reusing this engine's
+machine-learning parts for a driver-assist program that links several phones in one
+vehicle and tells the driver when to change lanes, slow down and so on. The only thing
+built is a convolution kernel and a cost benchmark (section 5).
 
-Every speed figure here is an estimate. No camera, phone or road has been tested.
+Speed figures are estimates unless marked as measured. No camera, phone or road has been
+tested.
+
+## 0. Requirements set by the owner (2026-11-10)
+
+1. **Warnings only.** The phone never controls the vehicle. (Section 2.)
+2. **India and all European countries.** (Section 2a.)
+3. **Any phone: Android, iPhone, or agenticOS.** "mac" in the request is read as Apple's
+   phones. (Section 2b.)
 
 ---
 
@@ -54,6 +63,55 @@ Three rules follow from "someone's safety depends on it":
    agenticOS, which has no screen to look at.
 3. **Too many false warnings is a failure**, not caution: a driver who learns to ignore it
    is worse off than one without it.
+
+## 2a. India and all of Europe: what that requires
+
+One program, with everything that differs between countries held as data, chosen from the
+GPS position at the start of a drive and changeable by voice.
+
+| Differs by country | Cases to cover | Handled by |
+|---|---|---|
+| Side of the road | Left: India, UK, Ireland, Cyprus, Malta. Right: the rest of Europe | A flag that mirrors lane logic: which side is the overtaking lane, which mirror matters, which way "drifting" is dangerous |
+| Speed units | km/h everywhere except mph in the UK | Country table; speech in the local unit |
+| Speed limits and signs | European signs are broadly uniform; national defaults differ; Indian signs and their upkeep differ | Sign reading where signs are reliable, a table of national default limits per road type otherwise, and saying "limit unknown" instead of guessing |
+| Lane markings | Europe: mostly marked. India: often unmarked, worn, or ignored | Lane functions switch on only where markings are detected with confidence. Elsewhere the system warns on **vehicles and gaps**, not lanes |
+| Traffic mix | India: two-wheelers, three-wheelers, pedestrians, animals, wrong-side traffic. Europe: cyclists, trams, roundabouts | Detector classes and condition experts (section 3) per region; evaluated per region |
+| Language | Hindi, Telugu and the other major Indian languages; some 24 official languages in the EU | Short fixed phrases, translated once and reviewed by speakers, spoken by the platform's own voice. Tones as the fallback for any language not yet covered |
+| Law | Rules on mounting a phone, using one while driving and filming the road differ by country; some European countries are reported to restrict dashcams | A per-country checklist **before release in that country**. The design helps: no video is stored or sent |
+| Privacy (EU and India) | Filming people and number plates on public roads | Frames are processed in memory and dropped. The overnight-learning buffer (section 6) is off by default and is opt-in per country |
+
+"All countries" is the target; it is reached country by country. A country counts as
+supported only after the system has been evaluated on footage from it and the legal
+checklist is done. The honest launch order is India plus one right-hand and one left-hand
+European country, then the rest.
+
+## 2b. Any phone: Android, iPhone, agenticOS
+
+One Rust core, three thin shells. Only capture, voice and the app wrapper differ.
+
+| Layer | Android | iPhone | agenticOS (postmarketOS) |
+|---|---|---|---|
+| Core: models, tracking, fusion, warning logic | Same Rust library | Same | Same |
+| How the core is called | JNI, as RIE's `bindings/android` | C interface from Swift, as RIE's `bindings/ios` | Direct, a child process of `agentd` |
+| Camera | Platform camera API | Platform camera API | Kernel camera interface; **works on few phones today** |
+| GPU | Vulkan | Metal | Vulkan through Mesa, unproven |
+| Voice | Platform text-to-speech | Platform text-to-speech | RIE's speech path |
+| Position and speed | Platform location API | Platform location API | `agentd`'s location tool |
+| Must stay in the foreground | Can run as a foreground service | The camera stops when the app leaves the screen | Not applicable |
+| Distribution | App store or direct install | App store only, with review | agenticOS package |
+
+What "any phone" can honestly mean:
+
+- **Any phone can join; not any phone can do everything.** At start-up each phone runs a
+  ten-second self-test (the benchmark in section 5) and takes the role it can hold: full
+  perception, a smaller model at a lower frame rate, or sensor-only (GPS, motion) with no
+  camera work. A phone that cannot hold the minimum frame rate says so and does not
+  pretend to watch.
+- **Mixed sets must work**: an iPhone in front with an Android phone behind. So the link
+  uses only what all three have: a local Wi-Fi network (one phone's hotspot) with a small
+  common message format. No platform-specific pairing.
+- agenticOS is the hardest of the three for this product, because of cameras. Android and
+  iPhone are where it will work first.
 
 ## 3. What carries over from this engine
 
@@ -117,7 +175,24 @@ Budget: Ditto's plan assumes about 15 G multiply-adds per second on a Snapdragon
 class CPU, **unmeasured**. At that rate a detector plus a lane model fits at roughly 3 to
 7 frames per second on the CPU. Warnings need about 10. So either the models must be at
 the small end, or the skip expert and the GPU must deliver. This has to be measured before
-anything is promised; `ditto bench` gains a convolution case for that purpose.
+anything is promised.
+
+**Built for this:** a 2-D convolution on `rie-core`'s quantized kernels (also needed by
+Ditto's image decoder) and `ditto bench-conv`, which times a stack of convolutions the size
+of a small detector's backbone with random weights. It measures cost only; it detects
+nothing. Measured on the x86-64 development VM (4 cores, AVX2, 4-bit weights), **not a
+phone**:
+
+| Input | Work per frame | Frames per second |
+|---|---|---|
+| 416×416, full width | 3.2 G multiply-adds | 11 (4.6 on one thread) |
+| 416×416, half the channels | 0.9 G | 23 |
+| 640×640, full width | 7.6 G | 5 |
+
+Convolutions run at 36 G multiply-adds per second here, against 57 G/s for plain matrix
+products: laying out the patches costs a third. If a phone reaches a third of this VM, as
+the plan assumes, one full-width model runs at about 4 frames per second on the CPU and a
+half-width one at about 8. `scripts/phone-bench.sh` now runs these cases on the phone.
 
 End-to-end target: under 300 ms from an event in front of the camera to the start of the
 spoken warning, measured, with the worst case reported and not the average.
@@ -138,7 +213,10 @@ a warning. At night, on the charger, in agenticOS's Deep stage:
 
 | Risk | Why it matters | Answer |
 |---|---|---|
-| **Cameras on postmarketOS** | On many supported phones the mainline kernel drives the camera poorly or not at all | Check first, per phone. This alone can rule a phone out. Android via RIE's existing Android bindings is the fallback |
+| **Cameras on postmarketOS** | On many supported phones the mainline kernel drives the camera poorly or not at all | Android and iPhone first; agenticOS per phone, where the camera works |
+| **"Any phone"** | Old and low-end phones cannot hold the frame rate; iPhones stop the camera in the background | Start-up self-test and roles (section 2b); a stated minimum below which a phone is sensor-only |
+| **Three platforms** | Three shells to build, test and release, two of them through app-store review | One Rust core with tests that need no phone; shells kept thin |
+| **Thirty-odd countries** | Each has its own roads, signs, language and law | Country data in tables; a country is supported only after evaluation and the legal check (section 2a) |
 | **Heat** | A phone on a dashboard in the sun, charging, running flat out, will throttle or shut down | Measure sustained frame rate at 45 °C ambient. Design for the throttled rate |
 | **Roads the models were not trained on** | Public lane and detection models are mostly trained on marked highways abroad. Unmarked lanes, mixed traffic, autos, cattle and left-hand driving are different | Evaluate on local footage before anything else; use Indian driving datasets where licences allow; expect lane functions to be limited to marked roads |
 | **Night, rain, glare** | Phone cameras degrade badly | Condition experts; announce "not watching" rather than guess |
@@ -151,21 +229,29 @@ a warning. At night, on the charger, in agenticOS's Deep stage:
 
 | Phase | Work | Done when |
 |---|---|---|
-| **D0. Can it see** | Camera capture on the target phone under postmarketOS; frame rate and delay; temperature on a dashboard. Convolution case in `ditto bench`. | A go / no-go for the phone and a measured frames-per-second budget |
+| **D0. Can it see** | `ditto bench-conv` on one Android phone, one iPhone and one agenticOS phone (the convolution kernel and benchmark exist; ARM is untested). Camera capture, frame rate and delay on each. Temperature on a dashboard. | A measured frames-per-second budget per platform, and which agenticOS phones have a usable camera |
 | **D1. Offline, one camera** | Converter for one detector and one lane model; run them on recorded drives on a desktop; tracking, calibration, distance, time to collision. | Detection and warning accuracy reported on recorded local footage, with missed and false warnings counted |
-| **D2. Real time, one phone** | Deadline scheduler, skip expert, voice warnings, "not watching" states. | Holds the frame rate and the 300 ms target on the phone for an hour, on recorded video fed in as if live |
-| **D3. Two phones** | Link, clock sync, hub merging, rear tracking, lane-change advice. | Lane-change advice correct on recorded two-camera drives; a dropped phone is handled |
+| **D2. Real time, one phone** | Android shell first, then iPhone. Deadline scheduler, skip expert, voice warnings, "not watching" states, start-up self-test and roles. | Holds the frame rate and the 300 ms target on the phone for an hour, on recorded video fed in as if live |
+| **D3. Two phones** | Link over local Wi-Fi, clock sync, hub merging, rear tracking, lane-change advice, left- and right-hand traffic. | Lane-change advice correct on recorded two-camera drives in both traffic directions; a mixed Android and iPhone pair works; a dropped phone is handled |
 | **D4. Road trials** | Passenger-operated drives; tune thresholds; count false warnings per hour. | A false-warning rate low enough that test drivers keep it on |
+| **D4b. Countries** | Country tables, phrases and voices, legal checklist, evaluation on local footage, one country at a time. | India, one right-hand and one left-hand European country pass; then the rest |
 | **D5. Overnight learning** | Buffer, larger night model, adapter training with the held-out gate. | Small models measurably better on local footage after a week |
 
 D0 and D1 need no phone in a car and risk nobody. Nothing goes on a road before D2 passes.
 
-## 9. Decisions needed
+## 9. Decisions
+
+Settled (section 0): warnings only; India and all European countries; Android, iPhone and
+agenticOS.
+
+Still needed:
 
 1. **Is this a second product next to Ditto, or does it replace video generation as the
    priority?** They share kernels but not much else.
-2. **Which country and which roads** (marked highways, city traffic)? This decides the
-   data, the lane functions that are realistic, and the law to check.
-3. **agenticOS phones only, or Android as well?** Camera support may force Android.
-4. **Which phones**, and is there recorded driving footage to start D1 with?
-5. **Confirmation of the scope in section 2**: warnings only, no control of the vehicle.
+2. **Which phones do you have to test on**, one per platform, and is there recorded
+   driving footage (India and Europe) to start D1 with?
+3. **Is "mac" the iPhone?** If you meant Mac computers, section 2b changes.
+4. **The first three countries** for D4b. Proposed: India, Germany (right-hand), UK or
+   Ireland (left-hand).
+5. **Who publishes the apps.** The iPhone and Android stores need a developer account and
+   an owner for the review process.

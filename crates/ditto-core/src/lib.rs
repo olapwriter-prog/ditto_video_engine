@@ -11,5 +11,6 @@
 pub mod attention;
 pub mod bench;
 pub mod block;
+pub mod conv;
 pub mod math;
 pub mod shapes;

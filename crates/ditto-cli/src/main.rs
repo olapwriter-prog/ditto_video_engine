@@ -8,6 +8,8 @@ use std::process::ExitCode;
 const USAGE: &str = "\
 ditto bench    [options]   time one denoiser block with random weights, scale to a clip
 ditto estimate [options]   the same table from a throughput figure, without running anything
+ditto bench-conv [--size 416] [--mult 1.0] [--wtype T] [--threads N] [--reps N]
+                           time a convolution stack the size of a small detector's backbone
 
   --model NAME     wan-1.3b (default) or pixart-0.6b
   --width W --height H --frames F    output size (default 480x272, 33 frames; images: 1 frame)
@@ -258,12 +260,96 @@ fn cmd_estimate(a: &Args) -> Result<(), String> {
     Ok(())
 }
 
+/// Frames per second of a perception-sized convolution stack (the driver warning proposal).
+fn cmd_bench_conv(argv: &[String]) -> Result<(), String> {
+    use ditto_core::conv::Backbone;
+    use rie_core::threadpool::{PoolConfig, ThreadPool};
+    let (mut size, mut mult, mut wtype, mut threads, mut reps) =
+        (416usize, 1.0f32, GgmlType::Q4_0, None, 3usize);
+    let mut it = argv.iter();
+    while let Some(flag) = it.next() {
+        let v = it.next().ok_or(format!("{flag} needs a value"))?;
+        let num = || {
+            v.parse::<usize>()
+                .ok()
+                .filter(|n| *n >= 1)
+                .ok_or(format!("{flag}: '{v}' is not a whole number of at least 1"))
+        };
+        match flag.as_str() {
+            "--size" => size = num()?,
+            "--threads" => threads = Some(num()?),
+            "--reps" => reps = num()?,
+            "--mult" => {
+                mult = v
+                    .parse::<f32>()
+                    .ok()
+                    .filter(|m| *m > 0.0 && *m <= 4.0)
+                    .ok_or(format!("--mult: '{v}' is not between 0 and 4"))?
+            }
+            "--wtype" => {
+                wtype = match v.to_ascii_lowercase().as_str() {
+                    "q4_0" => GgmlType::Q4_0,
+                    "q8_0" => GgmlType::Q8_0,
+                    "f16" => GgmlType::F16,
+                    "f32" => GgmlType::F32,
+                    _ => return Err(format!("unknown weight type '{v}' (q4_0, q8_0, f16, f32)")),
+                }
+            }
+            other => return Err(format!("unknown option '{other}'")),
+        }
+    }
+    if size < 32 {
+        return Err("--size must be at least 32".into());
+    }
+    let threads = threads.unwrap_or_else(bench::default_threads);
+    let pool = ThreadPool::new(PoolConfig {
+        n_threads: threads,
+        cores: vec![],
+        spin: std::time::Duration::from_micros(50),
+    });
+    let net = Backbone::synthetic(mult, wtype, 1);
+    let x: Vec<f32> = (0..size * size * 3)
+        .map(|i| ((i * 7919) % 255) as f32 / 127.5 - 1.0)
+        .collect();
+    let mut best = f64::INFINITY;
+    for _ in 0..reps {
+        let c = std::time::Instant::now();
+        let (y, ..) = net.forward(&pool, &x, size, size);
+        std::hint::black_box(y);
+        best = best.min(c.elapsed().as_secs_f64());
+    }
+    let macs = net.macs(size, size);
+    println!(
+        "convolution stack, {} layers, channels x{mult}, {size}x{size} input: {:.2} G multiply-adds per frame, {:.1} MB of weights",
+        net.layers.len(),
+        macs / 1e9,
+        net.size_bytes() as f64 / 1e6
+    );
+    println!(
+        "{} weights, {threads} thread(s), kernel {}",
+        wtype.name(),
+        rie_core::CpuFeatures::get().kernel_name()
+    );
+    println!(
+        "  one frame      {:.0} ms   {:.1} frames per second",
+        best * 1e3,
+        1.0 / best
+    );
+    println!(
+        "  throughput     {:.1} G multiply-adds/s",
+        macs / best / 1e9
+    );
+    println!("random weights: this measures cost only, it detects nothing");
+    Ok(())
+}
+
 fn main() -> ExitCode {
     let argv: Vec<String> = std::env::args().skip(1).collect();
     let run = |f: fn(&Args) -> Result<(), String>| parse(&argv[1..]).and_then(|a| f(&a));
     let res = match argv.first().map(String::as_str) {
         Some("bench") => run(cmd_bench),
         Some("estimate") => run(cmd_estimate),
+        Some("bench-conv") => cmd_bench_conv(&argv[1..]),
         Some("help" | "--help" | "-h") | None => {
             print!("{USAGE}");
             return ExitCode::SUCCESS;
