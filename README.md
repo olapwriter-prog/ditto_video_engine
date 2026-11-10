@@ -23,3 +23,5 @@ scripts/build-phone.sh                                # static ARM64 binary for 
   architecture, the expert conversion, agenticOS integration, phases, risks and the
   decisions still open.
 - [docs/PROGRESS.md](docs/PROGRESS.md): what has been measured, and on which machine.
+- [docs/DRIVER_ASSIST.md](docs/DRIVER_ASSIST.md): a proposal, not started, for reusing the
+  engine's kernels in a multi-phone driver warning system.
