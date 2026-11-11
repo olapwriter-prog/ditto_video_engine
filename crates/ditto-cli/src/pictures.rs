@@ -94,7 +94,15 @@ fn file_name(path: &str) -> String {
 pub fn memory_text(o: &Observation, path: &str) -> String {
     let full =
         std::fs::canonicalize(path).map_or_else(|_| path.to_string(), |p| p.display().to_string());
-    format!("Picture {} File: {full}", o.summary())
+    if o.generated() {
+        // never stored as evidence: the language model must not treat it as a photo
+        format!(
+            "Generated picture, not a photograph, not evidence of anything real. {} File: {full}",
+            o.summary()
+        )
+    } else {
+        format!("Picture {} File: {full}", o.summary())
+    }
 }
 
 /// `POST /v1/memory` on a running `rie-server`. Plain HTTP to a local address only: the
@@ -322,6 +330,189 @@ pub fn cmd_scripts(argv: &[String]) -> Result<(), String> {
                 &langs
             }
         );
+    }
+    Ok(())
+}
+
+fn key_path(given: Option<PathBuf>) -> Result<PathBuf, String> {
+    if let Some(p) = given {
+        return Ok(p);
+    }
+    if let Some(d) = std::env::var_os("DITTO_HOME") {
+        return Ok(PathBuf::from(d).join("device.key"));
+    }
+    std::env::var_os("HOME")
+        .map(|h| PathBuf::from(h).join(".ditto/device.key"))
+        .ok_or_else(|| "no key: pass --key FILE or set DITTO_HOME".into())
+}
+
+/// `ditto label`: mark a generated PNG as generated, signed by this device.
+pub fn cmd_label(argv: &[String]) -> Result<(), String> {
+    use ditto_vision::provenance::{badge, device_key, label_png, now_utc, Record};
+    let (mut input, mut out, mut key, mut force, mut with_badge) = (None, None, None, false, false);
+    let mut rec = Record {
+        prompt: String::new(),
+        seed: 0,
+        model: String::new(),
+        source: "text".into(),
+        created: now_utc(),
+    };
+    let mut it = argv.iter();
+    while let Some(a) = it.next() {
+        let mut val = || it.next().cloned().ok_or(format!("{a} needs a value"));
+        match a.as_str() {
+            "-o" | "--out" => out = Some(PathBuf::from(val()?)),
+            "--prompt" => rec.prompt = val()?,
+            "--seed" => rec.seed = val()?.parse().map_err(|_| "--seed: not a whole number")?,
+            "--model" => rec.model = val()?,
+            "--source" => rec.source = val()?,
+            "--key" => key = Some(PathBuf::from(val()?)),
+            "--badge" => with_badge = true,
+            "--force" => force = true,
+            s if s.starts_with('-') => return Err(format!("unknown option '{s}'")),
+            _ if input.is_none() => input = Some(a.clone()),
+            _ => return Err("`ditto label` takes one picture".into()),
+        }
+    }
+    let input = input.ok_or("no picture given")?;
+    if rec.prompt.trim().is_empty() || rec.model.trim().is_empty() {
+        return Err(
+            "--prompt and --model are required: a label must say what made the picture".into(),
+        );
+    }
+    let out = out.ok_or("-o OUT.png is required; the original is never changed in place")?;
+    if out.exists() && !force {
+        return Err(format!(
+            "{} exists; pass --force to replace it",
+            out.display()
+        ));
+    }
+    let bytes = read(&input)?;
+    let loaded = ditto_vision::load::load(&bytes).map_err(|e| format!("{input}: {e}"))?;
+    // labels live in PNG text chunks: anything else is re-encoded as PNG, losslessly
+    let mut img = loaded.image;
+    if with_badge {
+        badge(&mut img);
+    }
+    let mut png = Vec::new();
+    img.write_to(&mut std::io::Cursor::new(&mut png), image::ImageFormat::Png)
+        .map_err(|e| e.to_string())?;
+    let key = device_key(&key_path(key)?)?;
+    let labelled = label_png(&png, &rec, &key)?;
+    std::fs::write(&out, &labelled).map_err(|e| format!("{}: {e}", out.display()))?;
+    println!(
+        "{}: labelled as AI-generated{}, signed by this device",
+        out.display(),
+        if with_badge {
+            ", with a visible AI badge"
+        } else {
+            ""
+        }
+    );
+    Ok(())
+}
+
+/// `ditto verify`: what a file says about how it was made.
+pub fn cmd_verify(argv: &[String]) -> Result<(), String> {
+    let o = parse(argv)?;
+    let mut any_broken = false;
+    for path in &o.files {
+        let bytes = read(path)?;
+        let loaded = ditto_vision::load::load(&bytes).map_err(|e| format!("{path}: {e}"))?;
+        let p = ditto_vision::provenance::inspect(&bytes, &loaded.image);
+        let status = p
+            .ditto
+            .as_ref()
+            .map(|d| format!("{:?}", d.status).to_lowercase());
+        any_broken |= matches!(status.as_deref(), Some("pixelschanged" | "forged"));
+        if o.json {
+            let mut j = json!({"file": file_name(path), "generated": if p.says_generated() { "yes" } else { "no marker found" }, "provenance": p.describe()});
+            if let Some(s) = status {
+                j["ditto_label"] = json!(s);
+            }
+            if let Some(d) = &p.ditto {
+                for k in ["prompt", "seed", "model", "source", "created"] {
+                    if let Some(v) = d.record.get(k) {
+                        j[k] = v.clone();
+                    }
+                }
+            }
+            println!("{j}");
+        } else {
+            println!("{}: {}", file_name(path), p.describe());
+        }
+    }
+    if any_broken {
+        return Err("a label shows the picture was changed after it was made, or the label was tampered with".into());
+    }
+    Ok(())
+}
+
+/// `ditto compare ORIGINAL RESULT [--mask MASK]`: did an edit keep the real picture?
+pub fn cmd_compare(argv: &[String]) -> Result<(), String> {
+    use ditto_vision::fidelity::{compare, Verdict};
+    let (mut files, mut mask, mut json_out) = (Vec::new(), None, false);
+    let mut it = argv.iter();
+    while let Some(a) = it.next() {
+        match a.as_str() {
+            "--mask" => mask = Some(it.next().cloned().ok_or("--mask needs a value")?),
+            "--json" => json_out = true,
+            "--" => files.extend(it.by_ref().cloned()),
+            s if s.starts_with('-') => return Err(format!("unknown option '{s}'")),
+            _ => files.push(a.clone()),
+        }
+    }
+    let [original, result] = <[String; 2]>::try_from(files)
+        .map_err(|_| "give the original picture and the edited one")?;
+    let pic = |p: &str| -> Result<image::RgbaImage, String> {
+        ditto_vision::load::load(&read(p)?)
+            .map(|l| l.image)
+            .map_err(|e| format!("{p}: {e}"))
+    };
+    let m = mask.as_deref().map(pic).transpose()?;
+    let f = compare(&pic(&original)?, &pic(&result)?, m.as_ref())?;
+    let what = if m.is_some() {
+        "outside the area the edit was allowed to change"
+    } else {
+        "anywhere (no mask given, so every change counts)"
+    };
+    let meaning = match f.verdict {
+        Verdict::Faithful => format!("the real picture is kept {what}"),
+        Verdict::Drifted => {
+            format!("the edit changed things {what}: check them before using or sharing it")
+        }
+        Verdict::Different => format!(
+            "this is no longer the same picture {what}: do not present it as the original scene"
+        ),
+    };
+    let psnr = if f.psnr.is_finite() {
+        format!("{:.1} dB", f.psnr)
+    } else {
+        "identical".into()
+    };
+    if json_out {
+        let mut j = json!({"verdict": f.verdict.name(), "meaning": meaning, "psnr": psnr, "changed_outside_percent": (f.changed_outside as f64 * 1000.0).round() / 10.0, "resized": if f.resized { "yes" } else { "no" }});
+        if let Some(i) = f.changed_inside {
+            j["changed_inside_percent"] = json!((i as f64 * 1000.0).round() / 10.0);
+        }
+        if let Some((x, y, w, h)) = f.drift_box {
+            j["changes_outside_at"] = json!(format!("x {x}, y {y}, {w}x{h}"));
+        }
+        println!("{j}");
+    } else {
+        println!("{}: {meaning}", f.verdict.name());
+        println!(
+            "  {:.1}% of those pixels changed, PSNR {psnr}{}",
+            f.changed_outside * 100.0,
+            if f.resized {
+                ", result resized to the original's size"
+            } else {
+                ""
+            }
+        );
+        if let Some((x, y, w, h)) = f.drift_box {
+            println!("  changes found within x {x}, y {y}, {w}x{h}");
+        }
     }
     Ok(())
 }

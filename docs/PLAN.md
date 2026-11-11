@@ -356,13 +356,21 @@ files = [ { file = "...-dit-q4.gguf", url = "...", sha256 = "..." }, ... ]
 
 ---
 
+## 7a. Generated pictures must not pass for real ones
+
+Every output is labelled (standard IPTC marker plus a signed record, optional visible
+badge), edits of real photos are checked against the original, candidates are shown only
+after passing a check, and some realistic pictures are refused outright. The labelling and
+checking code exists; the rules for the generator are in
+[HONEST_PICTURES.md](HONEST_PICTURES.md).
+
 ## 8. Output formats
 
 | Kind | Default | Notes |
 |---|---|---|
 | Image | PNG | Small pure-Rust encoder |
 | Video | Decide in Phase 0 | Options: AV1 via a pure-Rust encoder (slow, but it is night), animated WebP, or the SoC's hardware encoder through V4L2 where the mainline kernel has it. Messaging apps decide which is useful, so test what the receiving phones play |
-| Always | `poster.png` + `meta.json` | For the digest and the UI |
+| Always | `poster.png` + `meta.json`, both labelled as AI-generated | For the digest and the UI |
 
 ---
 

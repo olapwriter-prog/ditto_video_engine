@@ -15,6 +15,9 @@ An image and video generation engine in Rust for phones running
   (time, place, camera, colours, sharpness, QR codes), handed to the inference engine as
   tool output or memory.
 - `ditto trace`: a screenshot, diagram or logo as SVG, exact to the pixel.
+- `ditto label`, `ditto verify`, `ditto compare`: generated pictures carry a signed,
+  standard AI label and never pass for photos; AI edits are checked against the original.
+- `ditto scripts`: mixed-script text split by script, for all 22 scheduled Indian languages.
 - `ditto bench`, `ditto bench-conv`: cost measurements for the generator and for perception
   models.
 
@@ -35,6 +38,8 @@ scripts/build-phone.sh                                # static ARM64 binary for 
   decisions still open.
 - [docs/USE_CASES.md](docs/USE_CASES.md): the user's own pictures, screenshots, editing and
   video use cases, what is built, and how results reach the inference engine.
+- [docs/HONEST_PICTURES.md](docs/HONEST_PICTURES.md): how generated pictures are kept from
+  passing for real ones.
 - [docs/PROGRESS.md](docs/PROGRESS.md): what has been measured, and on which machine.
 - [docs/DRIVER_ASSIST.md](docs/DRIVER_ASSIST.md): a proposal for reusing the engine's kernels
   in a multi-phone driver warning system (warnings only; India and Europe; Android, iPhone,

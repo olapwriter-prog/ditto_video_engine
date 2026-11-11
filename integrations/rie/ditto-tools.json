@@ -4,26 +4,109 @@
       "name": "photo.inspect",
       "description": "Look at a picture file on this phone: when and where it was taken, camera, size, colours, sharpness, QR codes, photo or screenshot",
       "category": "Files & Documents",
-      "keywords": ["photo", "picture", "image", "screenshot", "qr", "ఫోటో", "చిత్రం", "फोटो", "तस्वीर"],
-      "command": ["ditto", "look", "--json", "--", "{path}"],
+      "keywords": [
+        "photo",
+        "picture",
+        "image",
+        "screenshot",
+        "qr",
+        "ఫోటో",
+        "చిత్రం",
+        "फोटो",
+        "तस्वीर"
+      ],
+      "command": [
+        "ditto",
+        "look",
+        "--json",
+        "--",
+        "{path}"
+      ],
       "timeout_ms": 20000,
       "parameters": {
         "type": "object",
-        "properties": { "path": { "type": "string", "description": "path of the picture file" } },
-        "required": ["path"]
+        "properties": {
+          "path": {
+            "type": "string",
+            "description": "path of the picture file"
+          }
+        },
+        "required": [
+          "path"
+        ]
       }
     },
     {
       "name": "image.to_svg",
       "description": "Turn a screenshot, diagram or logo into an SVG file next to it, exact to the pixel",
       "category": "Files & Documents",
-      "keywords": ["svg", "vector", "screenshot", "logo", "diagram"],
-      "command": ["ditto", "trace", "--json", "--", "{path}"],
+      "keywords": [
+        "svg",
+        "vector",
+        "screenshot",
+        "logo",
+        "diagram"
+      ],
+      "command": [
+        "ditto",
+        "trace",
+        "--json",
+        "--",
+        "{path}"
+      ],
       "timeout_ms": 60000,
       "parameters": {
         "type": "object",
-        "properties": { "path": { "type": "string", "description": "path of the picture file" } },
-        "required": ["path"]
+        "properties": {
+          "path": {
+            "type": "string",
+            "description": "path of the picture file"
+          }
+        },
+        "required": [
+          "path"
+        ]
+      }
+    },
+    {
+      "name": "photo.compare_edit",
+      "description": "Check whether an edited or AI-changed picture still shows the real original scene, and where it changed",
+      "category": "Files & Documents",
+      "keywords": [
+        "edit",
+        "edited",
+        "real",
+        "fake",
+        "changed",
+        "original",
+        "compare",
+        "ai"
+      ],
+      "command": [
+        "ditto",
+        "compare",
+        "--json",
+        "--",
+        "{original}",
+        "{edited}"
+      ],
+      "timeout_ms": 30000,
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "original": {
+            "type": "string",
+            "description": "path of the original picture"
+          },
+          "edited": {
+            "type": "string",
+            "description": "path of the edited picture"
+          }
+        },
+        "required": [
+          "original",
+          "edited"
+        ]
       }
     }
   ]

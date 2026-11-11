@@ -77,7 +77,7 @@ fn the_inference_engine_runs_the_tools_from_the_shipped_manifest() {
     let tools = load_manifest(&manifest(&d)).expect("the manifest loads in rie-server");
     assert_eq!(
         tools.iter().map(|t| t.name.as_str()).collect::<Vec<_>>(),
-        ["photo.inspect", "image.to_svg"]
+        ["photo.inspect", "image.to_svg", "photo.compare_edit"]
     );
 
     let look = &tools[0];
@@ -290,5 +290,184 @@ fn several_pictures_and_bad_ones() {
         .output()
         .unwrap();
     assert_eq!(out.status.code(), Some(2));
+    let _ = std::fs::remove_dir_all(&d);
+}
+
+/// A generated picture is labelled, read back as generated, never filed as a photo, and an
+/// edit after labelling is caught.
+#[test]
+fn generated_pictures_are_labelled_and_never_pass_for_photos() {
+    let d = dir("generated");
+    let (pic, gen, key, mem) = (
+        d.join("made.png"),
+        d.join("made-labelled.png"),
+        d.join("device.key"),
+        d.join("rie-memory"),
+    );
+    screenshot(&pic);
+    let label = |extra: &[&str]| {
+        ditto()
+            .args([
+                "label",
+                pic.to_str().unwrap(),
+                "-o",
+                gen.to_str().unwrap(),
+                "--prompt",
+                "a busy market street",
+                "--model",
+                "test-dit",
+                "--seed",
+                "11",
+            ])
+            .args(["--key", key.to_str().unwrap()])
+            .args(extra)
+            .output()
+            .unwrap()
+    };
+    let out = label(&["--badge"]);
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert_eq!(std::fs::metadata(&key).unwrap().len(), 32);
+    #[cfg(unix)]
+    assert_eq!(
+        std::os::unix::fs::PermissionsExt::mode(&std::fs::metadata(&key).unwrap().permissions())
+            & 0o777,
+        0o600
+    );
+    // never overwritten silently
+    assert!(!label(&[]).status.success());
+
+    let out = ditto()
+        .args(["verify", "--json", gen.to_str().unwrap()])
+        .output()
+        .unwrap();
+    assert!(out.status.success());
+    let v: Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert_eq!(
+        (
+            v["generated"].as_str(),
+            v["ditto_label"].as_str(),
+            v["prompt"].as_str(),
+            v["seed"].as_u64()
+        ),
+        (
+            Some("yes"),
+            Some("intact"),
+            Some("a busy market street"),
+            Some(11)
+        )
+    );
+
+    // the inference engine is told it is generated, in its memory and in the tool output
+    let out = ditto()
+        .args([
+            "look",
+            "--json",
+            "--memory",
+            mem.to_str().unwrap(),
+            "--",
+            gen.to_str().unwrap(),
+        ])
+        .output()
+        .unwrap();
+    let j: Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert_eq!(j["kind"], "AI-generated, not a photograph");
+    let mut store = MemoryStore::open(&mem, 4096).unwrap();
+    let hit = store.recall("market street picture", 1, None, 0.0);
+    assert!(
+        hit[0]
+            .obs
+            .text
+            .starts_with("Generated picture, not a photograph, not evidence of anything real."),
+        "{}",
+        hit[0].obs.text
+    );
+    drop(store);
+
+    // edited after labelling: copy the picture's label onto changed pixels
+    let mut img = image::open(&gen).unwrap().to_rgba8();
+    for x in 0..30 {
+        img.put_pixel(x, 50, Rgba([255, 0, 0, 255]));
+    }
+    let edited_png = d.join("edited-plain.png");
+    img.save(&edited_png).unwrap();
+    let labelled = std::fs::read(&gen).unwrap();
+    let plain = std::fs::read(&edited_png).unwrap();
+    let edited = d.join("edited.png");
+    std::fs::write(&edited, splice_text_chunks(&plain, &labelled)).unwrap();
+    let out = ditto()
+        .args(["verify", edited.to_str().unwrap()])
+        .output()
+        .unwrap();
+    assert!(!out.status.success(), "a broken label is a failure");
+    assert!(String::from_utf8_lossy(&out.stdout).contains("then edited"));
+    // saved again without its label: nothing can be claimed either way
+    let out = ditto()
+        .args(["verify", edited_png.to_str().unwrap()])
+        .output()
+        .unwrap();
+    assert!(out.status.success());
+    assert!(String::from_utf8_lossy(&out.stdout).contains("does not show the picture is real"));
+    let _ = std::fs::remove_dir_all(&d);
+}
+
+/// The text chunks of `from`, put before the end of `into`.
+fn splice_text_chunks(into: &[u8], from: &[u8]) -> Vec<u8> {
+    let parse = |b: &[u8]| {
+        let mut v = Vec::new();
+        let mut i = 8;
+        while i + 12 <= b.len() {
+            let len = u32::from_be_bytes(b[i..i + 4].try_into().unwrap()) as usize;
+            v.push((b[i + 4..i + 8].to_vec(), b[i..i + 12 + len].to_vec()));
+            i += 12 + len;
+        }
+        v
+    };
+    let mut out = into[..8].to_vec();
+    for (ty, raw) in parse(into) {
+        if ty == b"IEND" {
+            for (t2, r2) in parse(from) {
+                if t2 == b"iTXt" {
+                    out.extend_from_slice(&r2);
+                }
+            }
+        }
+        out.extend_from_slice(&raw);
+    }
+    out
+}
+
+#[test]
+fn the_inference_engine_can_check_an_edit_against_the_original() {
+    let d = dir("compare");
+    let (orig, good, bad) = (d.join("orig.png"), d.join("good.png"), d.join("bad.png"));
+    let base = RgbaImage::from_fn(120, 80, |x, y| {
+        Rgba([(x * 2) as u8, (y * 3) as u8, ((x + y) % 256) as u8, 255])
+    });
+    base.save(&orig).unwrap();
+    base.save(&good).unwrap();
+    let mut changed = base.clone();
+    for x in 0..120 {
+        for y in 0..40 {
+            changed.put_pixel(x, y, Rgba([10, 200, 10, 255]));
+        }
+    }
+    changed.save(&bad).unwrap();
+    let tools = load_manifest(&manifest(&d)).unwrap();
+    let cmp = tools
+        .iter()
+        .find(|t| t.name == "photo.compare_edit")
+        .unwrap();
+    let out =
+        cmp.run(&json!({"original": orig.to_str().unwrap(), "edited": good.to_str().unwrap()}));
+    assert_eq!(out.status, Status::Ok, "{:?}", out.error);
+    assert_eq!(out.value["verdict"], "faithful");
+    let out =
+        cmp.run(&json!({"original": orig.to_str().unwrap(), "edited": bad.to_str().unwrap()}));
+    assert_eq!(out.value["verdict"], "different");
+    assert_eq!(out.value["changes_outside_at"], "x 0, y 0, 120x40");
     let _ = std::fs::remove_dir_all(&d);
 }

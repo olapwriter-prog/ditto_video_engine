@@ -122,6 +122,20 @@ Run on the x86-64 VM with QEMU 8.2 user-mode emulation: 41 checks, 0 failed.
   covered as processor classes, not as individual models. 32-bit phones have no fast
   kernel (`scalar`) and would be far too slow for models.
 
+### Generated pictures labelled and checked ([HONEST_PICTURES.md](HONEST_PICTURES.md))
+
+- `ditto label`: the IPTC `trainedAlgorithmicMedia` marker in XMP, a signed record
+  (prompt, seed, model, pixel SHA-256, Ed25519), optional visible "AI" badge.
+- `ditto verify`, and `ditto look`: intact, edited after generation, tampered, another
+  generator's marker, C2PA present (not validated), or "no marker, which does not show the
+  picture is real".
+- `ditto compare`: faithful / drifted / different outside the area an edit was allowed to
+  change, with where it changed. Thresholds not yet tuned on real edits.
+- Generated pictures go into the inference engine's memory as "not a photograph, not
+  evidence"; new tool `photo.compare_edit`.
+- exiftool reads Ditto's marker as the standard digital source type; Pillow opens the files.
+- Tests: 67 pass in the workspace, and on all six emulated phone processors (`scripts/sim-phones.sh`, 41 of 41 checks).
+
 ### Next
 
 - Run `scripts/phone-bench.sh` on a phone and record the output here. This decides whether

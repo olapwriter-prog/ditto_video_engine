@@ -11,8 +11,10 @@
 #![allow(clippy::needless_range_loop)]
 
 pub mod codes;
+pub mod fidelity;
 pub mod load;
 pub mod observe;
+pub mod provenance;
 pub mod scripts;
 pub mod stats;
 pub mod trace;

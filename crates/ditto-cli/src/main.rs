@@ -13,6 +13,13 @@ ditto look PICTURE... [--json] [--rie http://127.0.0.1:8080] [--memory DIR]
                            filed in the inference engine's memory (running server, or its directory)
 ditto trace PICTURE [-o OUT.svg] [--colours 16] [--json] [--force]
                            a screenshot, diagram or logo as SVG, exact to the pixel
+ditto verify PICTURE... [--json]
+                           was it made by AI? reads Ditto's signed label, the IPTC marker other
+                           generators write, and C2PA presence; says what it cannot know
+ditto label PICTURE -o OUT.png --prompt TEXT --model NAME [--seed N] [--badge] [--key FILE]
+                           mark a generated picture as AI-made, signed by this device
+ditto compare ORIGINAL EDITED [--mask MASK] [--json]
+                           did an AI edit keep the real picture outside the area it was asked to change?
 ditto scripts [--json] TEXT  the scripts in mixed text (a sign in Telugu, Hindi and English), the
                            languages each could be, and every script's digits as 0-9
 ditto bench    [options]   time one denoiser block with random weights, scale to a clip
@@ -359,6 +366,9 @@ fn main() -> ExitCode {
         Some("bench") => run(cmd_bench),
         Some("estimate") => run(cmd_estimate),
         Some("look") => pictures::cmd_look(&argv[1..]),
+        Some("verify") => pictures::cmd_verify(&argv[1..]),
+        Some("label") => pictures::cmd_label(&argv[1..]),
+        Some("compare") => pictures::cmd_compare(&argv[1..]),
         Some("scripts") => pictures::cmd_scripts(&argv[1..]),
         Some("trace") => pictures::cmd_trace(&argv[1..]),
         Some("bench-conv") => cmd_bench_conv(&argv[1..]),

@@ -32,6 +32,8 @@ pub enum Kind {
     PhotoWithoutCameraData,
     /// Large areas of exactly one colour: a screenshot, a diagram, a logo, a scan of text.
     ScreenOrGraphic,
+    /// The file says a generative model made it. Takes precedence over everything else.
+    Generated,
 }
 
 impl Kind {
@@ -40,6 +42,7 @@ impl Kind {
             Kind::Photo => "photo",
             Kind::PhotoWithoutCameraData => "photo, no camera data",
             Kind::ScreenOrGraphic => "screenshot or graphic",
+            Kind::Generated => "AI-generated, not a photograph",
         }
     }
 }
@@ -252,7 +255,7 @@ pub fn kind(stats: &Stats, from_camera: bool) -> Kind {
 /// and always empty for screenshots and graphics, where "dark" or "flat" is not a fault.
 pub fn problems(stats: &Stats, kind: Kind) -> Vec<&'static str> {
     let mut v = Vec::new();
-    if kind == Kind::ScreenOrGraphic {
+    if matches!(kind, Kind::ScreenOrGraphic | Kind::Generated) {
         return v;
     }
     if stats.sharpness < BLURRY_BELOW {
